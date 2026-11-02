@@ -63,7 +63,7 @@
         }
     ],
     "favoritos": [
-        "Dom Casmurro"
+        "O Cortiço"
     ],
     "horario": "Não informado.",
     "localizacao": "Não informada."

@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -34,8 +35,7 @@
             font-family: "DM Sans", sans-serif;
         }
 
-        button,
-        input {
+        button, input {
             font: inherit;
         }
 
@@ -570,7 +570,7 @@
                         <input
                             id="store-input"
                             type="text"
-                            placeholder="Digite o nome da loja..."
+                            placeholder="Digite o nome do livro..."
                         >
                         <button class="primary-button" type="submit">
                             Consultar disponibilidade
@@ -622,6 +622,7 @@
 
         let selectedTitle = null;
         let favoriteTitles = [];
+        let allBooks = [];
 
         async function getJson(url, options = {}) {
             const response = await fetch(url, options);
@@ -689,10 +690,6 @@
                     ? "♥ Remover dos favoritos"
                     : "♡ Favoritar";
                 favoriteButton.setAttribute("aria-pressed", String(isFavorite));
-                favoriteButton.setAttribute(
-                    "aria-label",
-                    `${isFavorite ? "Remover" : "Adicionar"} ${book.titulo} ${isFavorite ? "dos" : "aos"} favoritos`
-                );
 
                 favoriteButton.addEventListener("click", async (event) => {
                     event.stopPropagation();
@@ -760,6 +757,11 @@
 
             try {
                 const books = await getJson(`/api/livros?${params}`);
+
+                if (!query.trim()) {
+                    allBooks = books;
+                }
+
                 renderBooks(books);
 
                 if (
@@ -787,20 +789,13 @@
 
             await loadBooks(document.querySelector("#search-input").value);
 
-            const store = document.querySelector("#store-input").value.trim();
-            await checkAvailability(store);
+            checkAvailability();
         }
 
-        async function checkAvailability(store) {
+        async function checkAvailability() {
             if (!selectedTitle) {
                 availabilityMessage.textContent =
                     "Selecione um livro no catálogo para consultar.";
-                return;
-            }
-
-            if (!store) {
-                availabilityMessage.textContent =
-                    `Livro selecionado: ${selectedTitle}. Informe uma loja para consultar.`;
                 return;
             }
 
@@ -821,7 +816,7 @@
             try {
                 const favorites = await getJson("/api/favoritos");
 
-                favoriteTitles = favorites.map(book => book.titulo);
+                favoriteTitles = favorites;
                 favoriteList.replaceChildren();
 
                 if (!favorites.length) {
@@ -832,28 +827,26 @@
                     return;
                 }
 
-                favorites.forEach(book => {
+                favorites.forEach(title => {
                     const item = document.createElement("div");
                     item.className = "favorite-item";
 
-                    const title = document.createElement("strong");
-                    title.textContent = book.titulo;
+                    const book = allBooks.find(livro => livro.titulo === title);
+
+                    const name = document.createElement("strong");
+                    name.textContent = title;
 
                     const author = document.createElement("p");
-                    author.textContent = book.autor;
+                    author.textContent = book ? book.autor : "Autor não informado.";
 
                     const removeButton = document.createElement("button");
                     removeButton.type = "button";
                     removeButton.textContent = "Remover dos favoritos";
-                    removeButton.setAttribute(
-                        "aria-label",
-                        `Remover ${book.titulo} dos favoritos`
-                    );
 
                     removeButton.addEventListener("click", async () => {
                         try {
                             await getJson(
-                                `/api/favoritos/${encodeURIComponent(book.titulo)}`,
+                                `/api/favoritos/${encodeURIComponent(title)}`,
                                 { method: "DELETE" }
                             );
 
@@ -866,7 +859,7 @@
                         }
                     });
 
-                    item.append(title, author, removeButton);
+                    item.append(name, author, removeButton);
                     favoriteList.append(item);
                 });
             } catch (error) {
@@ -879,6 +872,59 @@
             }
         }
 
+        async function loadRecommendations() {
+            try {
+                const books = await getJson("/api/recomendacoes");
+                const container = document.querySelector("#recommendations");
+
+                container.replaceChildren();
+
+                if (!books.length) {
+                    const empty = document.createElement("p");
+                    empty.className = "empty-state";
+                    empty.textContent = "Nenhuma recomendação disponível.";
+                    container.append(empty);
+                    return;
+                }
+
+                books.forEach(book => {
+                    const item = document.createElement("div");
+                    item.className = "recommendation";
+
+                    const title = document.createElement("strong");
+                    title.textContent = book.titulo;
+
+                    const author = document.createElement("span");
+                    author.textContent = book.autor;
+
+                    item.append(title, author);
+                    container.append(item);
+                });
+            } catch (error) {
+                console.error("Erro ao carregar recomendações:", error);
+            }
+        }
+
+        async function loadStoreInformation() {
+            try {
+                const data = await getJson("/api/informacoes");
+
+                document.querySelector("#store-hours").textContent =
+                    data.horario;
+
+                document.querySelector("#store-location").textContent =
+                    data.localizacao;
+            } catch (error) {
+                document.querySelector("#store-hours").textContent =
+                    "Não foi possível carregar.";
+
+                document.querySelector("#store-location").textContent =
+                    "Não foi possível carregar.";
+
+                console.error("Erro ao carregar informações:", error);
+            }
+        }
+
         document.querySelector("#search-form").addEventListener("submit", (event) => {
             event.preventDefault();
             loadBooks(document.querySelector("#search-input").value);
@@ -886,52 +932,17 @@
 
         document.querySelector("#store-form").addEventListener("submit", (event) => {
             event.preventDefault();
-            checkAvailability(document.querySelector("#store-input").value.trim());
+            checkAvailability();
         });
 
         async function initialize() {
-            const results = await Promise.allSettled([
-                loadBooks(),
-                loadFavorites(),
-                getJson("/api/horario").then(data => {
-                    document.querySelector("#store-hours").textContent = data.horario;
-                }),
-                getJson("/api/localizacao").then(data => {
-                    document.querySelector("#store-location").textContent = data.localizacao;
-                }),
-                getJson("/api/recomendacoes").then(books => {
-                    const container = document.querySelector("#recommendations");
-                    container.replaceChildren();
+            await loadBooks();
+            await loadFavorites();
 
-                    if (!books.length) {
-                        const empty = document.createElement("p");
-                        empty.className = "empty-state";
-                        empty.textContent = "Nenhuma recomendação disponível.";
-                        container.append(empty);
-                        return;
-                    }
-
-                    books.forEach(book => {
-                        const item = document.createElement("div");
-                        item.className = "recommendation";
-
-                        const title = document.createElement("strong");
-                        title.textContent = book.titulo;
-
-                        const author = document.createElement("span");
-                        author.textContent = book.autor;
-
-                        item.append(title, author);
-                        container.append(item);
-                    });
-                })
+            await Promise.all([
+                loadStoreInformation(),
+                loadRecommendations()
             ]);
-
-            results.forEach(result => {
-                if (result.status === "rejected") {
-                    console.error("Erro ao carregar uma seção:", result.reason);
-                }
-            });
         }
 
         initialize();
